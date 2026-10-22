@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: clipforge
+      POSTGRES_PASSWORD: clipforge
+      POSTGRES_DB: clipforge
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipforge"]
+      interval: 5s
+      retries: 10
+
+  web:
+    build: .
+    command: npm run dev
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://clipforge:clipforge@db:5432/clipforge
+      STORAGE_DIR: /data/storage
+    ports: ["3000:3000"]
+    volumes: [".:/app", "/app/node_modules", "storage:/data/storage"]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker:
+    build: .
+    command: npx tsx src/worker/index.ts
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://clipforge:clipforge@db:5432/clipforge
+      STORAGE_DIR: /data/storage
+    volumes: [".:/app", "/app/node_modules", "storage:/data/storage"]
+    depends_on: { db: { condition: service_healthy } }
+
+volumes:
+  pgdata:
+  storage:

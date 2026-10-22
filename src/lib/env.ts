@@ -1,0 +1,57 @@
+function int(name: string, d: number): number {
+  const v = parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(v) && v > 0 ? v : d;
+}
+
+export const env = {
+  get databaseUrl() {
+    return process.env.DATABASE_URL ?? "";
+  },
+  get authSecret() {
+    const s = process.env.AUTH_SECRET ?? "";
+    if (!s && process.env.NODE_ENV === "production") throw new Error("AUTH_SECRET is not configured");
+    return s || "dev-only-insecure-secret-change-me-please-32b";
+  },
+  get appUrl() {
+    return process.env.APP_URL ?? "http://localhost:3000";
+  },
+  get storageDir() {
+    return process.env.STORAGE_DIR ?? "./storage";
+  },
+  get openaiKey() {
+    return process.env.OPENAI_API_KEY ?? "";
+  },
+  get openaiBase() {
+    return process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+  },
+  get transcriptionModel() {
+    return process.env.OPENAI_TRANSCRIPTION_MODEL ?? "whisper-1";
+  },
+  get analysisModel() {
+    return process.env.OPENAI_ANALYSIS_MODEL ?? "gpt-4o-mini";
+  },
+  get youtubeKey() {
+    return process.env.YOUTUBE_API_KEY ?? "";
+  },
+  get maxUploadBytes() {
+    return int("MAX_UPLOAD_MB", 1024) * 1024 * 1024;
+  },
+  get maxSourceSeconds() {
+    return int("MAX_SOURCE_SECONDS", 7200);
+  },
+  get retentionDays() {
+    return int("RETENTION_DAYS", 30);
+  },
+  get workerConcurrency() {
+    return int("WORKER_CONCURRENCY", 1);
+  },
+  get ffmpegPath() {
+    return process.env.FFMPEG_PATH ?? "ffmpeg";
+  },
+  get ffprobePath() {
+    return process.env.FFPROBE_PATH ?? "ffprobe";
+  },
+  get smtpConfigured() {
+    return !!process.env.SMTP_HOST;
+  },
+};
