@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FolderKanban, LogOut, Plus, Scissors, User } from "lucide-react";
+import { FolderKanban, LogOut, Plus, Scissors, Settings, User } from "lucide-react";
+import { LegalLinks } from "@/components/legal-links";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "Projects", icon: FolderKanban },
   { href: "/projects/new", label: "New Project", icon: Plus },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppShell({ email, children }: { email: string; children: React.ReactNode }) {
@@ -56,7 +58,8 @@ export function AppShell({ email, children }: { email: string; children: React.R
             </Link>
           ))}
         </nav>
-        <div className="mt-auto">
+        <div className="mt-auto space-y-3">
+          <LegalLinks className="px-2" />
           <AccountMenu email={email} onLogout={logout} />
         </div>
       </aside>
@@ -77,6 +80,9 @@ export function AppShell({ email, children }: { email: string; children: React.R
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 p-4 md:p-8">{children}</main>
+        <div className="border-t border-border px-4 py-3 md:hidden">
+          <LegalLinks />
+        </div>
       </div>
     </div>
   );

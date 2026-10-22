@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -61,6 +62,11 @@ function LoginForm() {
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
             Send magic link
           </Button>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            By continuing you agree to our{" "}
+            <Link href="/terms" className="underline">Terms of Service</Link>, <Link href="/privacy" className="underline">Privacy Policy</Link> and{" "}
+            <Link href="/acceptable-use" className="underline">Acceptable Use Policy</Link>.
+          </p>
         </form>
       )}
     </div>

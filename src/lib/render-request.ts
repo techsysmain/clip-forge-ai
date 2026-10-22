@@ -1,5 +1,5 @@
 import { ApiError } from "./api";
-import { query } from "./db";
+import { exec } from "./db";
 import { enqueueJob } from "./queue";
 import type { ClipRow, ProjectRow } from "./repo";
 
@@ -10,7 +10,7 @@ export async function requestRender(clip: ClipRow, project: ProjectRow) {
   }
   const { job, created } = await enqueueJob("render", project.id, clip.id);
   if (created) {
-    await query("UPDATE clips SET status = 'queued', error_message = NULL, updated_at = now() WHERE id = $1", [clip.id]);
+    await exec("UPDATE clips SET status = 'queued', error_message = NULL WHERE id = ?", [clip.id]);
   }
   return { job, created };
 }

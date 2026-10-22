@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { query, queryOne } from "../lib/db";
+import { exec, newId, query, queryOne } from "../lib/db";
 import { env } from "../lib/env";
-import { analyzeTranscript, PipelineError, transcribeAudio } from "../lib/ai";
+import { analyzeTranscript, audioBitrateKbps, PipelineError, transcribeAudio } from "../lib/ai";
 import { extractAudio, OUTPUT_SIZES, probe, renderClip, type AspectRatio, type CropMode } from "../lib/ffmpeg";
+import { notifyProjectOwner } from "../lib/notify";
 import { completeJob, failJob, updateJob } from "../lib/queue";
 import type { ClipRow, JobRow, ProjectRow } from "../lib/repo";
 import { resolveSource } from "../lib/sources";
@@ -21,7 +22,7 @@ async function withTmp<T>(label: string, fn: (dir: string) => Promise<T>): Promi
 }
 
 async function setProjectStatus(id: string, status: string, error: string | null = null) {
-  await query("UPDATE projects SET status = $2, error_message = $3, updated_at = now() WHERE id = $1", [id, status, error]);
+  await exec("UPDATE projects SET status = ?, error_message = ? WHERE id = ?", [status, error, id]);
 }
 
 async function stage(job: JobRow, projectId: string, status: string, progress: number) {
@@ -30,7 +31,7 @@ async function stage(job: JobRow, projectId: string, status: string, progress: n
 }
 
 async function processAnalyze(job: JobRow) {
-  const project = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = $1", [job.project_id]);
+  const project = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = ?", [job.project_id]);
   if (!project) throw new PipelineError("The project no longer exists.");
   const settings = project.settings as { maxClipSeconds?: number; aspectRatio?: string; captionPreset?: string; cropMode?: string };
   const maxClip = Math.min(60, Math.max(10, Number(settings.maxClipSeconds) || 60));
@@ -39,7 +40,7 @@ async function processAnalyze(job: JobRow) {
   await stage(job, project.id, "fetching_source", 5);
   const key = await resolveSource(project, (f) => void updateJob(job.id, "fetching_source", 5 + f * 15));
   if (key !== project.source_storage_key) {
-    await query("UPDATE projects SET source_storage_key = $2 WHERE id = $1", [project.id, key]);
+    await exec("UPDATE projects SET source_storage_key = ? WHERE id = ?", [key, project.id]);
   }
   const file = storagePath(key);
   const info = await probe(file);
@@ -47,7 +48,7 @@ async function processAnalyze(job: JobRow) {
     throw new PipelineError(`This video is longer than the ${Math.round(env.maxSourceSeconds / 60)} minute limit.`);
   }
   if (!info.hasAudio) throw new PipelineError("This video has no audio track to transcribe.");
-  await query("UPDATE projects SET duration_seconds = $2 WHERE id = $1", [project.id, Math.max(1, Math.ceil(info.duration))]);
+  await exec("UPDATE projects SET duration_seconds = ? WHERE id = ?", [Math.max(1, Math.ceil(info.duration)), project.id]);
 
   // 2. Transcript
   let transcript = project.transcript as Transcript | null;
@@ -55,27 +56,27 @@ async function processAnalyze(job: JobRow) {
     await stage(job, project.id, "transcribing", 25);
     transcript = await withTmp("audio", async (dir) => {
       const audio = path.join(dir, "audio.mp3");
-      await extractAudio(file, audio);
+      await extractAudio(file, audio, audioBitrateKbps());
       await updateJob(job.id, "transcribing", 40);
       return transcribeAudio(audio);
     });
-    await query("UPDATE projects SET transcript = $2 WHERE id = $1", [project.id, JSON.stringify(transcript)]);
+    await exec("UPDATE projects SET transcript = ? WHERE id = ?", [JSON.stringify(transcript), project.id]);
   }
 
   // 3. Analysis
   await stage(job, project.id, "analyzing", 70);
   const result = await analyzeTranscript(project.title, transcript, info.duration, maxClip);
 
-  await query("DELETE FROM clips WHERE project_id = $1 AND status = 'suggested'", [project.id]);
+  await exec("DELETE FROM clips WHERE project_id = ? AND status = 'suggested'", [project.id]);
   const fixedAspect = ["9:16", "16:9", "1:1"].includes(settings.aspectRatio ?? "");
   for (const c of result.clips) {
     const preset = settings.captionPreset && settings.captionPreset !== "auto" ? settings.captionPreset : c.captionPreset;
-    await query(
-      `INSERT INTO clips (project_id, title, start_seconds, end_seconds, hook, summary, reason, transcript,
+    await exec(
+      `INSERT INTO clips (id, project_id, title, start_seconds, end_seconds, hook, summary, reason, transcript,
          engagement_score, aspect_ratio, crop_mode, caption_style)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        project.id, c.title, c.startSeconds, c.endSeconds, c.hook, c.summary, c.reason, c.transcript,
+        newId(), project.id, c.title, c.startSeconds, c.endSeconds, c.hook, c.summary, c.reason, c.transcript,
         c.engagementScore,
         fixedAspect ? settings.aspectRatio : c.aspectRatio,
         settings.cropMode === "blur" ? "blur" : "center",
@@ -83,21 +84,30 @@ async function processAnalyze(job: JobRow) {
       ],
     );
   }
-  await query("UPDATE projects SET video_summary = $2 WHERE id = $1", [project.id, result.videoSummary]);
+  await exec("UPDATE projects SET video_summary = ? WHERE id = ?", [result.videoSummary, project.id]);
   await setProjectStatus(project.id, "ready");
+
+  const n = result.clips.length;
+  await notifyProjectOwner(project.id, (title) => ({
+    subject: `Your clips are ready: ${title}`.slice(0, 120),
+    heading: "Your clip suggestions are ready",
+    paragraphs: [`We found ${n} promising moment${n === 1 ? "" : "s"} in "${title}". Review them and choose which to render.`],
+    path: `/projects/${project.id}`,
+    cta: "Review clips",
+  }));
 }
 
 async function processRender(job: JobRow) {
-  const clip = await queryOne<ClipRow>("SELECT * FROM clips WHERE id = $1", [job.clip_id]);
+  const clip = await queryOne<ClipRow>("SELECT * FROM clips WHERE id = ?", [job.clip_id]);
   if (!clip) throw new PipelineError("The clip no longer exists.");
-  const project = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = $1", [clip.project_id]);
+  const project = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = ?", [clip.project_id]);
   if (!project?.source_storage_key || !project.transcript) {
     throw new PipelineError("A permitted video source is required before rendering.");
   }
   const free = await freeBytes();
   if (free !== null && free < 200 * 1024 * 1024) throw new PipelineError("There is not enough storage space to render.", true);
 
-  await query("UPDATE clips SET status = 'rendering', error_message = NULL, updated_at = now() WHERE id = $1", [clip.id]);
+  await exec("UPDATE clips SET status = 'rendering', error_message = NULL WHERE id = ?", [clip.id]);
   const start = parseFloat(clip.start_seconds);
   const end = parseFloat(clip.end_seconds);
   if (!(end > start) || end - start > 60) throw new PipelineError("The clip range is invalid.");
@@ -128,11 +138,30 @@ async function processRender(job: JobRow) {
   });
   await fs.promises.writeFile(await ensureParent(srtKey), toSrt(captions), "utf8");
 
-  await query(
-    `UPDATE clips SET status = 'rendered', output_storage_key = $2, subtitle_storage_key = $3,
-       output_width = $4, output_height = $5, error_message = NULL, updated_at = now() WHERE id = $1`,
-    [clip.id, outKey, srtKey, width, height],
+  await exec(
+    `UPDATE clips SET status = 'rendered', output_storage_key = ?, subtitle_storage_key = ?,
+       output_width = ?, output_height = ?, error_message = NULL WHERE id = ?`,
+    [outKey, srtKey, width, height, clip.id],
   );
+}
+
+/** Sends one email when the last pending render of a project finishes. */
+async function notifyRenderDone(projectId: string) {
+  const pending = await queryOne<{ n: number }>(
+    "SELECT count(*) AS n FROM jobs WHERE project_id = ? AND job_type = 'render' AND status NOT IN ('completed','failed')",
+    [projectId],
+  );
+  if (pending && Number(pending.n) > 0) return;
+  const rows = await query<{ n: number }>("SELECT count(*) AS n FROM clips WHERE project_id = ? AND status = 'rendered'", [projectId]);
+  const n = Number(rows[0]?.n ?? 0);
+  if (n === 0) return;
+  await notifyProjectOwner(projectId, (title) => ({
+    subject: `Your clips are rendered: ${title}`.slice(0, 120),
+    heading: "Your clips are ready to download",
+    paragraphs: [`${n} rendered clip${n === 1 ? "" : "s"} from "${title}" ${n === 1 ? "is" : "are"} ready, with MP4 and SRT downloads.`],
+    path: `/projects/${projectId}`,
+    cta: "Open project",
+  }));
 }
 
 export async function runJob(job: JobRow) {
@@ -140,6 +169,7 @@ export async function runJob(job: JobRow) {
     if (job.job_type === "analyze") await processAnalyze(job);
     else await processRender(job);
     await completeJob(job.id);
+    if (job.job_type === "render") await notifyRenderDone(job.project_id);
   } catch (e) {
     const known = e instanceof PipelineError;
     const message = known ? e.message : "An unexpected processing error occurred.";
@@ -148,11 +178,20 @@ export async function runJob(job: JobRow) {
     const willRetry = await failJob(job, message, recoverable);
     if (job.job_type === "analyze") {
       await setProjectStatus(job.project_id, willRetry ? "queued" : "failed", willRetry ? null : message);
+      if (!willRetry) {
+        await notifyProjectOwner(job.project_id, (title) => ({
+          subject: `We couldn't analyze: ${title}`.slice(0, 120),
+          heading: "Video analysis failed",
+          paragraphs: [`"${title}" could not be analyzed: ${message}`],
+          path: `/projects/${job.project_id}`,
+          cta: "Open project",
+        }));
+      }
     } else if (job.clip_id) {
-      await query("UPDATE clips SET status = $2, error_message = $3, updated_at = now() WHERE id = $1", [
-        job.clip_id,
+      await exec("UPDATE clips SET status = ?, error_message = ? WHERE id = ?", [
         willRetry ? "queued" : "failed",
         willRetry ? null : message,
+        job.clip_id,
       ]);
     }
   }

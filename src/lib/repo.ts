@@ -62,7 +62,7 @@ export interface JobRow {
 /** Authorization boundary: returns the project only if it belongs to the user. */
 export async function getOwnedProject(userId: string, id: string): Promise<ProjectRow> {
   if (!isUuid(id)) throw new ApiError(404, "Project not found.");
-  const row = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = $1 AND user_id = $2", [id, userId]);
+  const row = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) throw new ApiError(404, "Project not found.");
   return row;
 }
@@ -71,7 +71,7 @@ export async function getOwnedProject(userId: string, id: string): Promise<Proje
 export async function getOwnedClip(userId: string, id: string): Promise<{ clip: ClipRow; project: ProjectRow }> {
   if (!isUuid(id)) throw new ApiError(404, "Clip not found.");
   const clip = await queryOne<ClipRow>(
-    `SELECT c.* FROM clips c JOIN projects p ON p.id = c.project_id WHERE c.id = $1 AND p.user_id = $2`,
+    `SELECT c.* FROM clips c JOIN projects p ON p.id = c.project_id WHERE c.id = ? AND p.user_id = ?`,
     [id, userId],
   );
   if (!clip) throw new ApiError(404, "Clip not found.");
@@ -82,7 +82,7 @@ export async function getOwnedClip(userId: string, id: string): Promise<{ clip: 
 export async function getOwnedJob(userId: string, id: string): Promise<JobRow> {
   if (!isUuid(id)) throw new ApiError(404, "Job not found.");
   const job = await queryOne<JobRow>(
-    `SELECT j.* FROM jobs j JOIN projects p ON p.id = j.project_id WHERE j.id = $1 AND p.user_id = $2`,
+    `SELECT j.* FROM jobs j JOIN projects p ON p.id = j.project_id WHERE j.id = ? AND p.user_id = ?`,
     [id, userId],
   );
   if (!job) throw new ApiError(404, "Job not found.");
@@ -90,12 +90,14 @@ export async function getOwnedJob(userId: string, id: string): Promise<JobRow> {
 }
 
 export async function latestJobs(projectId: string): Promise<JobRow[]> {
-  return query<JobRow>(
-    `SELECT DISTINCT ON (job_type, COALESCE(clip_id, project_id)) *
-     FROM jobs WHERE project_id = $1
-     ORDER BY job_type, COALESCE(clip_id, project_id), created_at DESC`,
-    [projectId],
-  );
+  const rows = await query<JobRow>("SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT 200", [projectId]);
+  const seen = new Set<string>();
+  return rows.filter((j) => {
+    const key = `${j.job_type}:${j.clip_id ?? "project"}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 const num = (v: string | number) => (typeof v === "number" ? v : parseFloat(v));

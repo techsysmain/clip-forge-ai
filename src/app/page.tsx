@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Captions, Film, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LegalLinks } from "@/components/legal-links";
 
 const FEATURES = [
   { icon: Sparkles, title: "AI moment detection", text: "Transcribes speech and ranks the strongest ≤60s moments by hook, payoff and standalone context." },
@@ -44,6 +45,7 @@ export default function Landing() {
             </div>
           ))}
         </div>
+        <LegalLinks className="mt-16 justify-center" />
       </div>
     </div>
   );

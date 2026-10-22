@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { NextResponse } from "next/server";
 import { ApiError, handle } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { exec } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getOwnedProject } from "@/lib/repo";
 import { EXT_BY_TYPE } from "@/lib/sources";
@@ -51,10 +51,10 @@ export const PUT = handle(async (req: Request, { params }: Ctx) => {
   await fs.promises.rename(tmp, target);
 
   // A new source invalidates any previous transcript and unrendered suggestions.
-  await query(
-    `UPDATE projects SET source_storage_key = $2, transcript = NULL, status = 'awaiting_source',
-       error_message = NULL, updated_at = now() WHERE id = $1`,
-    [project.id, key],
+  await exec(
+    `UPDATE projects SET source_storage_key = ?, transcript = NULL, status = 'awaiting_source',
+       error_message = NULL WHERE id = ?`,
+    [key, project.id],
   );
   return NextResponse.json({ ok: true });
 });

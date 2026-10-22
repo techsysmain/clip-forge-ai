@@ -3,6 +3,8 @@ function int(name: string, d: number): number {
   return Number.isFinite(v) && v > 0 ? v : d;
 }
 
+export type AiProvider = "openai" | "gemini";
+
 export const env = {
   get databaseUrl() {
     return process.env.DATABASE_URL ?? "";
@@ -13,7 +15,7 @@ export const env = {
     return s || "dev-only-insecure-secret-change-me-please-32b";
   },
   get appUrl() {
-    return process.env.APP_URL ?? "http://localhost:3000";
+    return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   },
   get storageDir() {
     return process.env.STORAGE_DIR ?? "./storage";
@@ -29,6 +31,26 @@ export const env = {
   },
   get analysisModel() {
     return process.env.OPENAI_ANALYSIS_MODEL ?? "gpt-4o-mini";
+  },
+  get geminiKey() {
+    return process.env.GEMINI_API_KEY ?? "";
+  },
+  get geminiModel() {
+    return process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+  },
+  /** AI_PROVIDER wins; otherwise whichever key is configured (OpenAI first). */
+  get aiProvider(): AiProvider | null {
+    const p = (process.env.AI_PROVIDER ?? "").toLowerCase();
+    if (p === "openai" || p === "gemini") return p;
+    if (this.openaiKey) return "openai";
+    if (this.geminiKey) return "gemini";
+    return null;
+  },
+  get resendKey() {
+    return process.env.RESEND_API_KEY ?? "";
+  },
+  get emailFrom() {
+    return process.env.EMAIL_FROM ?? "ClipForge AI <onboarding@resend.dev>";
   },
   get youtubeKey() {
     return process.env.YOUTUBE_API_KEY ?? "";
@@ -50,8 +72,5 @@ export const env = {
   },
   get ffprobePath() {
     return process.env.FFPROBE_PATH ?? "ffprobe";
-  },
-  get smtpConfigured() {
-    return !!process.env.SMTP_HOST;
   },
 };

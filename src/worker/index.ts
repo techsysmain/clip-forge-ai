@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { migrate } from "../../scripts/migrate";
-import { closePool, query } from "../lib/db";
+import { closePool, exec, query } from "../lib/db";
 import { env } from "../lib/env";
 import { claimJob, recoverStaleJobs } from "../lib/queue";
 import { removeProjectFiles } from "../lib/storage";
@@ -24,17 +24,22 @@ async function cleanupTmp() {
 /** Data retention: removes projects (and their files) older than RETENTION_DAYS. */
 async function enforceRetention() {
   const rows = await query<{ id: string }>(
-    "DELETE FROM projects WHERE created_at < now() - ($1 || ' days')::interval RETURNING id",
-    [String(env.retentionDays)],
+    "SELECT id FROM projects WHERE created_at < DATE_SUB(NOW(3), INTERVAL ? DAY) LIMIT 200",
+    [env.retentionDays],
   );
-  for (const r of rows) await removeProjectFiles(r.id);
+  for (const r of rows) {
+    await exec("DELETE FROM projects WHERE id = ?", [r.id]);
+    await removeProjectFiles(r.id);
+  }
+  // Expired / used sign-in tokens
+  await exec("DELETE FROM magic_tokens WHERE expires_at < DATE_SUB(NOW(3), INTERVAL 1 DAY)");
   if (rows.length) console.log(`[worker] retention removed ${rows.length} project(s)`);
 }
 
 async function main() {
   await migrate();
   await cleanupTmp();
-  console.log(`[worker] started (concurrency ${env.workerConcurrency})`);
+  console.log(`[worker] started (concurrency ${env.workerConcurrency}, AI provider: ${env.aiProvider ?? "none"})`);
   await recoverStaleJobs();
   await enforceRetention();
   setInterval(() => void recoverStaleJobs().catch((e) => console.error(e.message)), 60_000);

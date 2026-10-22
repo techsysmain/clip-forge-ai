@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ApiError, handle } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { exec } from "@/lib/db";
 import { enqueueJob } from "@/lib/queue";
 import { getOwnedProject, publicJob } from "@/lib/repo";
 
@@ -19,9 +19,7 @@ export const POST = handle(async (_req: Request, { params }: Ctx) => {
   }
   const { job, created } = await enqueueJob("analyze", project.id);
   if (created) {
-    await query("UPDATE projects SET status = 'queued', error_message = NULL, updated_at = now() WHERE id = $1", [
-      project.id,
-    ]);
+    await exec("UPDATE projects SET status = 'queued', error_message = NULL WHERE id = ?", [project.id]);
   }
   return NextResponse.json({ job: publicJob(job), duplicate: !created }, { status: created ? 202 : 200 });
 });

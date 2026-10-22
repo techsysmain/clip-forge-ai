@@ -56,6 +56,37 @@ describe("analyzeTranscript", () => {
   });
 });
 
+describe("Gemini provider", () => {
+  beforeEach(() => {
+    delete process.env.OPENAI_API_KEY;
+    process.env.GEMINI_API_KEY = "g-test";
+    process.env.AI_PROVIDER = "gemini";
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.AI_PROVIDER;
+  });
+
+  it("analyzes via generateContent with structured JSON", async () => {
+    const payload = { videoSummary: "A talk.", clips: [{ ...base, startSeconds: 8, endSeconds: 40, engagementScore: 88 }] };
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await analyzeTranscript("Title", transcript, 50, 60);
+    expect(r.clips).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("generativelanguage.googleapis.com");
+    expect(JSON.parse(init.body as string).generationConfig.responseMimeType).toBe("application/json");
+  });
+
+  it("reports a missing key clearly", async () => {
+    delete process.env.GEMINI_API_KEY;
+    await expect(analyzeTranscript("Title", transcript, 50, 60)).rejects.toBeInstanceOf(PipelineError);
+  });
+});
+
 describe("snapClips", () => {
   it("snaps within the maximum length", () => {
     const [c] = snapClips([{ ...base, startSeconds: 7, endSeconds: 45, engagementScore: 1 }], segments, 30);

@@ -15,10 +15,7 @@ export const POST = handle(async (req: Request, { params }: Ctx) => {
   const user = await requireUser();
   const project = await getOwnedProject(user.id, (await params).id);
   const { clipIds } = schema.parse(await req.json().catch(() => ({})));
-  const clips = await query<ClipRow>("SELECT * FROM clips WHERE project_id = $1 AND id = ANY($2::uuid[])", [
-    project.id,
-    clipIds,
-  ]);
+  const clips = await query<ClipRow>("SELECT * FROM clips WHERE project_id = ? AND id IN (?)", [project.id, clipIds]);
   const jobs = [];
   for (const clip of clips) jobs.push(publicJob((await requestRender(clip, project)).job));
   return NextResponse.json({ jobs }, { status: 202 });

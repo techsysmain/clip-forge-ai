@@ -81,10 +81,10 @@ export async function probe(file: string): Promise<ProbeResult> {
   return { duration, width: v.width, height: v.height, hasAudio: a };
 }
 
-export async function extractAudio(input: string, output: string): Promise<void> {
+export async function extractAudio(input: string, output: string, kbps = 24): Promise<void> {
   await run(
     env.ffmpegPath,
-    ["-hide_banner", "-nostdin", "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "24k", "-f", "mp3", output],
+    ["-hide_banner", "-nostdin", "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-b:a", `${kbps}k`, "-f", "mp3", output],
     { timeoutMs: 30 * 60 * 1000 },
   );
 }

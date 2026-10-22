@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ApiError, handle } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
-import { query, queryOne } from "@/lib/db";
+import { exec, newId, query, queryOne } from "@/lib/db";
 import { fetchYouTubeMetadata, MetadataError, type VideoMetadata } from "@/lib/metadata";
 import { assertSafeUrl, UnsafeUrlError } from "@/lib/net-guard";
 import { publicProject, type ProjectRow } from "@/lib/repo";
@@ -26,10 +26,12 @@ const schema = z.object({
 export const GET = handle(async () => {
   const user = await requireUser();
   const rows = await query<ProjectRow & { clip_count: string; rendered_count: string }>(
-    `SELECT p.*,
+    `SELECT p.id, p.user_id, p.source_url, p.source_type, p.youtube_video_id, p.direct_url, p.title, p.channel,
+       p.thumbnail_url, p.duration_seconds, p.status, p.source_storage_key, NULL AS transcript, p.video_summary,
+       p.settings, p.error_message, p.created_at, p.updated_at,
        (SELECT count(*) FROM clips c WHERE c.project_id = p.id) AS clip_count,
        (SELECT count(*) FROM clips c WHERE c.project_id = p.id AND c.status = 'rendered') AS rendered_count
-     FROM projects p WHERE p.user_id = $1 ORDER BY p.created_at DESC LIMIT 100`,
+     FROM projects p WHERE p.user_id = ? ORDER BY p.created_at DESC LIMIT 100`,
     [user.id],
   );
   return NextResponse.json({
@@ -68,11 +70,13 @@ export const POST = handle(async (req: Request) => {
   const sourceType = videoId ? "youtube" : body.directUrl ? "url" : "upload";
   const title = meta?.title ?? (body.title || (body.directUrl ? new URL(body.directUrl).pathname.split("/").pop() : "") || "Uploaded video");
 
-  const row = await queryOne<ProjectRow>(
-    `INSERT INTO projects (user_id, source_url, source_type, youtube_video_id, direct_url, title, channel, thumbnail_url,
+  const id = newId();
+  await exec(
+    `INSERT INTO projects (id, user_id, source_url, source_type, youtube_video_id, direct_url, title, channel, thumbnail_url,
        duration_seconds, settings, rights_confirmed)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING *`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,1)`,
     [
+      id,
       user.id,
       videoId ? canonicalYouTubeUrl(videoId) : (body.directUrl ?? null),
       sourceType,
@@ -85,5 +89,6 @@ export const POST = handle(async (req: Request) => {
       JSON.stringify(body.settings),
     ],
   );
+  const row = await queryOne<ProjectRow>("SELECT * FROM projects WHERE id = ?", [id]);
   return NextResponse.json({ project: publicProject(row!) }, { status: 201 });
 });
