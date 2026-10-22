@@ -1,5 +1,7 @@
 # Production-style stack: MySQL + web + worker. Copy .env.example to .env first.
 # Start: docker compose up -d --build        Health: http://localhost:3000/api/health
+# Storage: by default web and worker share the `storage` volume. To use S3 instead, set STORAGE_DRIVER=s3 and
+# the S3_* variables in .env (see README); the volume is then unused.
 services:
   db:
     image: mysql:8.4

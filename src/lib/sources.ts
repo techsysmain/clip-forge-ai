@@ -1,10 +1,8 @@
-import fs from "node:fs";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { env } from "./env";
 import { PipelineError } from "./ai";
 import { assertSafeUrl, UnsafeUrlError } from "./net-guard";
-import { ensureParent, freeBytes, storageSize } from "./storage";
+import { freeBytes, putStream, storageSize } from "./storage";
 import type { ProjectRow } from "./repo";
 
 /**
@@ -76,19 +74,21 @@ const directUrlAdapter: SourceAdapter = {
       if (free !== null && total > 0 && free < total * 2) throw new PipelineError("There is not enough storage space for this video.", true);
 
       const key = `projects/${p.id}/source.${ext ?? "mp4"}`;
-      const file = await ensureParent(key);
       let received = 0;
+      let tooLarge = false;
       const source = Readable.fromWeb(res.body as never);
       source.on("data", (chunk: Buffer) => {
         received += chunk.length;
-        if (received > env.maxUploadBytes) source.destroy(new PipelineError("The video file exceeds the maximum allowed size."));
+        if (received > env.maxUploadBytes) {
+          tooLarge = true;
+          source.destroy(new Error("too large"));
+        }
         if (total > 0) onProgress(received / total);
       });
       try {
-        await pipeline(source, fs.createWriteStream(file));
-      } catch (e) {
-        await fs.promises.rm(file, { force: true });
-        if (e instanceof PipelineError) throw e;
+        await putStream(key, source, type === "application/octet-stream" ? undefined : type);
+      } catch {
+        if (tooLarge) throw new PipelineError("The video file exceeds the maximum allowed size.");
         throw new PipelineError("The download was interrupted.", true);
       }
       return key;

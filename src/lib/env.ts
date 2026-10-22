@@ -20,6 +20,35 @@ export const env = {
   get storageDir() {
     return process.env.STORAGE_DIR ?? "./storage";
   },
+  /** "disk" (shared volume, default) or "s3" (any S3-compatible object store). */
+  get storageDriver(): "disk" | "s3" {
+    return (process.env.STORAGE_DRIVER ?? "").toLowerCase() === "s3" ? "s3" : "disk";
+  },
+  get s3Bucket() {
+    return process.env.S3_BUCKET ?? "";
+  },
+  get s3Region() {
+    return process.env.S3_REGION ?? "us-east-1";
+  },
+  get s3Endpoint() {
+    return process.env.S3_ENDPOINT || undefined;
+  },
+  get s3AccessKeyId() {
+    return process.env.S3_ACCESS_KEY_ID ?? "";
+  },
+  get s3SecretAccessKey() {
+    return process.env.S3_SECRET_ACCESS_KEY ?? "";
+  },
+  get s3ForcePathStyle() {
+    return (process.env.S3_FORCE_PATH_STYLE ?? "").toLowerCase() === "true";
+  },
+  get s3Prefix() {
+    return (process.env.S3_PREFIX ?? "").replace(/^\/+|\/+$/g, "");
+  },
+  /** Maximum number of video frames sent to the vision model per project analysis. */
+  get maxAnalysisFrames() {
+    return int("VISION_MAX_FRAMES", 24);
+  },
   get openaiKey() {
     return process.env.OPENAI_API_KEY ?? "";
   },

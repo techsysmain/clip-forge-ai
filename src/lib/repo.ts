@@ -15,6 +15,7 @@ export interface ProjectRow {
   status: string;
   source_storage_key: string | null;
   transcript: unknown;
+  visual_notes: unknown;
   video_summary: string | null;
   settings: Record<string, unknown>;
   error_message: string | null;
@@ -34,7 +35,7 @@ export interface ClipRow {
   transcript: string | null;
   engagement_score: number;
   aspect_ratio: "9:16" | "16:9" | "1:1";
-  crop_mode: "center" | "blur";
+  crop_mode: "center" | "blur" | "face";
   caption_style: Record<string, unknown>;
   status: string;
   output_storage_key: string | null;

@@ -37,7 +37,7 @@ const patchSchema = z.object({
   startSeconds: z.number().min(0).optional(),
   endSeconds: z.number().min(0).optional(),
   aspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),
-  cropMode: z.enum(["center", "blur"]).optional(),
+  cropMode: z.enum(["center", "blur", "face"]).optional(),
   captionStyle: z.record(z.unknown()).optional(),
   title: z.string().trim().min(1).max(120).optional(),
 });

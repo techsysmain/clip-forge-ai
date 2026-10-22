@@ -211,6 +211,7 @@ export default function NewProject() {
             <SelectContent>
               <SelectItem value="center">Center crop</SelectItem>
               <SelectItem value="blur">Blurred background fill</SelectItem>
+              <SelectItem value="face">Face-aware crop (follows the speaker)</SelectItem>
             </SelectContent>
           </Select>
         </Field>

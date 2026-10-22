@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { NextResponse } from "next/server";
 import { ApiError, handle } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
@@ -8,7 +6,7 @@ import { exec } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getOwnedProject } from "@/lib/repo";
 import { EXT_BY_TYPE } from "@/lib/sources";
-import { ensureParent, freeBytes, removeKey } from "@/lib/storage";
+import { freeBytes, putStream, removeKey } from "@/lib/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -33,8 +31,6 @@ export const PUT = handle(async (req: Request, { params }: Ctx) => {
   if (!req.body) throw new ApiError(400, "Empty upload.");
 
   const key = `projects/${project.id}/source.${ext}`;
-  const target = await ensureParent(key);
-  const tmp = `${target}.upload`;
   let received = 0;
   const source = Readable.fromWeb(req.body as never);
   source.on("data", (c: Buffer) => {
@@ -42,17 +38,16 @@ export const PUT = handle(async (req: Request, { params }: Ctx) => {
     if (received > env.maxUploadBytes) source.destroy(new Error("too large"));
   });
   try {
-    await pipeline(source, fs.createWriteStream(tmp));
-  } catch {
-    await fs.promises.rm(tmp, { force: true });
+    await putStream(key, source, type);
+  } catch (e) {
+    console.error("[upload] failed:", e instanceof Error ? e.message : e);
     throw new ApiError(400, "The upload was interrupted or too large.");
   }
   if (project.source_storage_key && project.source_storage_key !== key) await removeKey(project.source_storage_key);
-  await fs.promises.rename(tmp, target);
 
   // A new source invalidates any previous transcript and unrendered suggestions.
   await exec(
-    `UPDATE projects SET source_storage_key = ?, transcript = NULL, status = 'awaiting_source',
+    `UPDATE projects SET source_storage_key = ?, transcript = NULL, visual_notes = NULL, status = 'awaiting_source',
        error_message = NULL WHERE id = ?`,
     [key, project.id],
   );

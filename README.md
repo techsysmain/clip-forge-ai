@@ -12,8 +12,24 @@ Turn long videos into captioned short-form clips. Reference a YouTube video (met
 | Queue | MySQL-backed (`FOR UPDATE SKIP LOCKED`), retries with backoff, stale-job recovery, unique `active_key` index prevents duplicate active jobs |
 | AI | **OpenAI** (Whisper word timestamps + JSON-schema analysis) **or Google Gemini** (transcription + structured analysis) |
 | Email | **Resend** API: sign-in links and job notifications (user can opt out in Settings) |
-| Storage | Filesystem at `STORAGE_DIR`, shared by web and worker; downloads streamed only after an ownership check |
-| Worker | `src/worker`: fetch source → ffprobe → audio → transcribe → analyze → FFmpeg render → notify |
+| Storage | `STORAGE_DRIVER=disk` (default; `STORAGE_DIR` shared by web and worker) or `STORAGE_DRIVER=s3` (any S3-compatible bucket, no shared disk needed); downloads proxied only after an ownership check |
+| Worker | `src/worker`: fetch source → ffprobe → audio → transcribe → sample & describe video frames → analyze → (face tracking) → FFmpeg render → notify |
+| Accounts | Open registration: entering any email on `/login` creates a free account on first magic-link use |
+
+### Video-frame analysis and face-aware crop
+Both use the configured vision-capable model (OpenAI `OPENAI_ANALYSIS_MODEL`, e.g. `gpt-4o-mini`, or Gemini) on the worker; no extra service.
+- **Frame analysis**: up to `VISION_MAX_FRAMES` (24) frames are sampled across the video, described, scored for visual interest and checked for faces. This context is passed alongside the transcript when choosing clips (stored in `projects.visual_notes`). If the vision call fails permanently, analysis continues transcript-only; transient errors are retried.
+- **Face-aware crop** (`crop mode = face`): at render time ~1 frame per 1.5 s of the clip is inspected, the largest face is tracked, outliers are median-filtered, small moves are ignored, and FFmpeg pans the crop window with a keyframed expression. Without a detectable face (or a vision error) the clip falls back to center crop.
+
+### Storage with S3
+```
+STORAGE_DRIVER=s3
+S3_BUCKET=my-bucket            S3_REGION=eu-west-1
+S3_ACCESS_KEY_ID=...           S3_SECRET_ACCESS_KEY=...     # or use the default AWS credential chain / IAM role
+S3_ENDPOINT=https://...        S3_FORCE_PATH_STYLE=true     # only for MinIO/R2/etc.
+S3_PREFIX=clipforge            # optional key prefix
+```
+Set the same variables on `web` and `worker`. Uploads stream to the bucket (multipart), the worker downloads the source to a temp dir while processing, and results are uploaded; the bucket needs no public access. Add a lifecycle rule to expire incomplete multipart uploads.
 
 YouTube URLs provide **metadata only** (YouTube Data API or public oEmbed). ClipForge never downloads from YouTube. Rendering requires an uploaded file or an authorized direct file URL (SSRF-guarded).
 
@@ -49,7 +65,7 @@ Production checklist:
 - [ ] Reverse-proxy rate limiting on `/api/auth/request` and uploads
 - [ ] Monitor `/api/health` and worker logs
 
-Scaling: run more `worker` instances or raise `WORKER_CONCURRENCY`; the queue is multi-worker safe. For multiple web instances or serverless hosting, replace `src/lib/storage.ts` with an S3-compatible implementation exposing the same functions.
+Scaling: run more `worker` instances or raise `WORKER_CONCURRENCY`; the queue is multi-worker safe. For multiple web instances or serverless hosting, use `STORAGE_DRIVER=s3` (the `storage` volume is then unnecessary).
 
 ## Security
 
@@ -61,7 +77,13 @@ Security headers/CSP (production), same-origin checks on mutating API calls, per
 
 ## Tests
 
-`npm test`: URL validation, 60s clip limits, subtitle timing/SRT/ASS, SSRF guard, AI analysis (OpenAI and Gemini, mocked), ownership checks. Real-FFmpeg rendering and browser UI tests need a running stack and are not included. `npm run fixture` creates a copyright-free sample video at `fixtures/sample.mp4` (no speech).
+`npm test`: URL validation, 60s clip limits, subtitle timing/SRT/ASS, SSRF guard, AI analysis response handling (mocked HTTP), ownership checks, plus tests that use the real thing:
+- `tests/ffmpeg.test.ts` runs the real FFmpeg/ffprobe (needs FFmpeg with libass): probing, audio and frame extraction, 9:16 center and blur renders, and face-aware panning verified by decoding pixels of the output. Skipped if FFmpeg is not installed.
+- `tests/storage.test.ts` runs the disk driver against a real temp dir, and the S3 driver against a real bucket when `S3_TEST_BUCKET` (plus `S3_*`/AWS credentials) is set.
+- `tests/vision.test.ts` calls the real vision API when `OPENAI_API_KEY` or `GEMINI_API_KEY` is set.
+- `tests/facetrack.test.ts` covers the tracking math.
+
+`npm run fixture` creates a copyright-free sample video at `fixtures/sample.mp4` (no speech).
 
 ## API
 
@@ -69,7 +91,7 @@ Security headers/CSP (production), same-origin checks on mutating API calls, per
 
 ## Known limitations
 
-Face-aware crop is not integrated (center crop and blur fill exist); video frames are not analyzed; storage is filesystem-based; UI/browser end-to-end tests are not included.
+Face detection relies on a general vision model (bounding boxes are approximate and billed per frame), not a dedicated detector; with several people the largest face is followed. Browser UI end-to-end tests are not included.
 
 ## Troubleshooting
 

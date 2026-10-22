@@ -18,7 +18,7 @@ const schema = z.object({
       aspectRatio: z.enum(["auto", "9:16", "16:9", "1:1"]).default("9:16"),
       maxClipSeconds: z.number().int().min(10).max(60).default(60),
       captionPreset: z.enum(["auto", "clean", "social", "minimal", "accessible"]).default("auto"),
-      cropMode: z.enum(["center", "blur"]).default("center"),
+      cropMode: z.enum(["center", "blur", "face"]).default("center"),
     })
     .default({}),
 });

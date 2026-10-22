@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { queryOne } from "@/lib/db";
-import { freeBytes } from "@/lib/storage";
+import { checkStorage } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await queryOne("SELECT 1");
-    const free = await freeBytes();
-    return NextResponse.json({ status: "ok", storage: free === null ? "unknown" : "ok" });
+    await checkStorage();
+    return NextResponse.json({ status: "ok", storage: "ok" });
   } catch {
     return NextResponse.json({ status: "unavailable" }, { status: 503 });
   }

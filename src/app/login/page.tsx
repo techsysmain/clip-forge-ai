@@ -38,8 +38,10 @@ function LoginForm() {
   return (
     <div className="w-full max-w-sm rounded-2xl border border-border bg-card/80 p-6 shadow-xl backdrop-blur">
       <Image src="/assets/logo.png" alt="ClipForge AI" width={48} height={48} className="mb-4 rounded-xl" />
-      <h1 className="text-xl font-semibold">Sign in to ClipForge AI</h1>
-      <p className="mt-1 text-sm text-muted-foreground">We&apos;ll email you a magic link. No password needed.</p>
+      <h1 className="text-xl font-semibold">Sign in or create your free account</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Enter your email and we&apos;ll send a magic link. New here? Your account is created automatically — registration is open to everyone, no password needed.
+      </p>
       {sent ? (
         <div className="mt-6 space-y-3 text-sm">
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-200">
@@ -60,10 +62,10 @@ function LoginForm() {
           {error && <p className="text-sm text-red-400">{error}</p>}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-            Send magic link
+            Continue with email
           </Button>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            By continuing you agree to our{" "}
+            By continuing (signing in or registering) you agree to our{" "}
             <Link href="/terms" className="underline">Terms of Service</Link>, <Link href="/privacy" className="underline">Privacy Policy</Link> and{" "}
             <Link href="/acceptable-use" className="underline">Acceptable Use Policy</Link>.
           </p>

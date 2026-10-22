@@ -24,7 +24,7 @@ interface Payload {
     startSeconds: number;
     endSeconds: number;
     aspectRatio: "9:16" | "16:9" | "1:1";
-    cropMode: "center" | "blur";
+    cropMode: "center" | "blur" | "face";
     captionStyle: CaptionStyle;
     status: string;
   };
@@ -41,7 +41,7 @@ export default function ClipEditor({ params }: { params: Promise<{ id: string }>
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
   const [aspect, setAspect] = useState<Payload["clip"]["aspectRatio"]>("9:16");
-  const [crop, setCrop] = useState<"center" | "blur">("center");
+  const [crop, setCrop] = useState<"center" | "blur" | "face">("center");
   const [style, setStyle] = useState<CaptionStyle | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<"save" | "render" | null>(null);
@@ -230,11 +230,12 @@ export default function ClipEditor({ params }: { params: Promise<{ id: string }>
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Crop</Label>
-              <Select value={crop} onValueChange={edit((v: string) => setCrop(v as "center" | "blur"))} disabled={locked}>
+              <Select value={crop} onValueChange={edit((v: string) => setCrop(v as "center" | "blur" | "face"))} disabled={locked}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="center">Center crop</SelectItem>
                   <SelectItem value="blur">Blur fill</SelectItem>
+                  <SelectItem value="face">Face-aware crop</SelectItem>
                 </SelectContent>
               </Select>
             </div>

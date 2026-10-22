@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { env } from "./env";
-import { PipelineError } from "./ai";
+import { PipelineError } from "./pipeline-error";
+import { trackCropFilter, type FacePoint } from "./facetrack";
 
 export const OUTPUT_SIZES = {
   "9:16": { width: 1080, height: 1920 },
@@ -9,7 +12,7 @@ export const OUTPUT_SIZES = {
 } as const;
 
 export type AspectRatio = keyof typeof OUTPUT_SIZES;
-export type CropMode = "center" | "blur";
+export type CropMode = "center" | "blur" | "face";
 
 /** Runs a binary with an argument array (never through a shell). */
 function run(
@@ -89,7 +92,45 @@ export async function extractAudio(input: string, output: string, kbps = 24): Pr
   );
 }
 
-export function buildFilter(width: number, height: number, cropMode: CropMode, assFile: string): string {
+export interface FrameFile {
+  time: number;
+  file: string;
+}
+
+/** Extracts one downscaled JPEG per timestamp (seconds into the input). Frames that cannot be decoded are skipped. */
+export async function extractFrames(input: string, times: number[], outDir: string, scaleWidth = 640): Promise<FrameFile[]> {
+  const results: (FrameFile | null)[] = new Array(times.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < times.length) {
+      const i = next++;
+      const file = path.join(outDir, `frame_${i}.jpg`);
+      try {
+        await run(
+          env.ffmpegPath,
+          ["-hide_banner", "-nostdin", "-y", "-ss", times[i].toFixed(3), "-i", input, "-frames:v", "1", "-vf", `scale=${scaleWidth}:-2`, "-q:v", "5", file],
+          { timeoutMs: 120_000 },
+        );
+        if (fs.existsSync(file)) results[i] = { time: times[i], file };
+      } catch {
+        // a single undecodable frame must not fail the whole job
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return results.filter((r): r is FrameFile => r !== null);
+}
+
+export function buildFilter(
+  width: number,
+  height: number,
+  cropMode: CropMode,
+  assFile: string,
+  track?: { points: FacePoint[]; srcWidth: number; srcHeight: number } | null,
+): string {
+  if (cropMode === "face" && track && track.points.length > 0) {
+    return trackCropFilter({ width, height, assFile, ...track });
+  }
   const base = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
   if (cropMode === "blur") {
     return (
@@ -108,6 +149,8 @@ export interface RenderArgs {
   width: number;
   height: number;
   cropMode: CropMode;
+  /** Subject path for cropMode "face"; without it the crop falls back to center. */
+  track?: { points: FacePoint[]; srcWidth: number; srcHeight: number } | null;
   /** Directory containing subs.ass; output is written to out.mp4 inside it */
   workDir: string;
   onProgress?: (fraction: number) => void;
@@ -120,7 +163,7 @@ export async function renderClip(a: RenderArgs): Promise<void> {
     "-ss", a.start.toFixed(3),
     "-i", a.input,
     "-t", duration.toFixed(3),
-    "-filter_complex", buildFilter(a.width, a.height, a.cropMode, "subs.ass"),
+    "-filter_complex", buildFilter(a.width, a.height, a.cropMode, "subs.ass", a.track),
     "-map", "[v]", "-map", "0:a?",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "192k",
