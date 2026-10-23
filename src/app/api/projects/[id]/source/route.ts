@@ -14,6 +14,18 @@ const ACTIVE = ["queued", "fetching_source", "transcribing", "analyzing"];
 
 /** Streams a raw video upload (Content-Type: video/*) straight to storage with size limits. */
 export const PUT = handle(async (req: Request, { params }: Ctx) => {
+  // Middleware does not run for this route (it would buffer the body), so repeat its CSRF origin check.
+  const origin = req.headers.get("origin");
+  if (origin) {
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+    let same = false;
+    try {
+      same = new URL(origin).host === host;
+    } catch {
+      /* invalid origin */
+    }
+    if (!same) throw new ApiError(403, "Cross-origin request blocked.");
+  }
   const user = await requireUser();
   const project = await getOwnedProject(user.id, (await params).id);
   if (ACTIVE.includes(project.status)) throw new ApiError(409, "This project is being processed. Try again when it finishes.");
@@ -42,6 +54,10 @@ export const PUT = handle(async (req: Request, { params }: Ctx) => {
   } catch (e) {
     console.error("[upload] failed:", e instanceof Error ? e.message : e);
     throw new ApiError(400, "The upload was interrupted or too large.");
+  }
+  if (received !== length) {
+    await removeKey(key);
+    throw new ApiError(400, "The upload was incomplete. Please try again.");
   }
   if (project.source_storage_key && project.source_storage_key !== key) await removeKey(project.source_storage_key);
 

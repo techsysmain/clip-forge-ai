@@ -33,5 +33,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/projects/:path*", "/clips/:path*", "/settings/:path*", "/login", "/api/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/projects/:path*",
+    "/clips/:path*",
+    "/settings/:path*",
+    "/login",
+    // Every /api route except the streaming upload endpoint: middleware would buffer (and truncate) its body.
+    "/api/((?!projects/[^/]+/source$).*)",
+  ],
 };
